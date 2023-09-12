@@ -1,0 +1,144 @@
+---
+title: Optimization
+format:
+    html:
+        code-fold: false
+        code-tools: true
+
+---
+
+Objective: to compare `hyperopt` and `optuna`
+
+Well, according to https://neptune.ai/blog/optuna-vs-hyperopt, `optuna` blows `hyperopt` off the water.
+
+This feeling is reflected in other posts and websites. There is no doubt, `optuna` is just better.
+Interesting sites:
+- Home: https://optuna.readthedocs.io/en/stable/index.html#
+- https://optuna.readthedocs.io/en/stable/tutorial/20_recipes/002_multi_objective.html
+- https://optuna.readthedocs.io/en/stable/tutorial/10_key_features/005_visualization.html
+- https://optuna.readthedocs.io/en/stable/tutorial/20_recipes/007_optuna_callback.html
+
+```{python}
+import optuna
+
+import sklearn.datasets
+import sklearn.ensemble
+import sklearn.model_selection
+import sklearn.svm
+
+from abc import ABC, abstractmethod
+```
+
+# Optuna
+
+The best part is that, though originally designed to define the search space inside the function to optimize (objective function), this can be computed at runtime, for instance retrieving it as property/method from classes defined as algorithms. 
+
+```{python}
+class BaseAlgorithm(ABC):
+    def __init__(self, random_seed = 42):
+        self._random_seed = random_seed
+
+    @property
+    def name(self):
+        return self.__class__.__name__
+
+    @abstractmethod
+    def get_search_space(
+        self, trial
+        ):
+        pass
+
+    @abstractmethod
+    def get_classifier(
+        self
+        ):
+        pass
+
+class RandomForest(BaseAlgorithm):
+    def get_search_space(self, trial):
+        return {
+            'n_estimators': trial.suggest_int('n_estimators', 2, 100),
+            'max_depth': trial.suggest_int('max_depth', 1, 32, log=True)
+        }
+    
+    def get_classifier(self):
+        return sklearn.ensemble.RandomForestClassifier
+
+class SVC(BaseAlgorithm):
+    def get_search_space(self, trial):
+        return {
+            'C': trial.suggest_float('svc_c', 1e-10, 1e10, log=True),
+            'gamma': "auto"
+        }
+    
+    def get_classifier(self):
+        return sklearn.svm.SVC
+
+```
+
+The objective function also can, without much effort, be called with additional parameters besides `trial`, making optuna to calculate the minimum necessary.
+```{python}
+
+def objective(trial, iris_data, list_algorithms):
+
+    algorithm = trial.suggest_categorical('algorithm', [x.name for x in list_algorithms])
+
+    chosen_algorithm_instance = [x for x in list_algorithms if x.name == algorithm][0]
+
+    space = chosen_algorithm_instance.get_search_space(trial)
+    clf = chosen_algorithm_instance.get_classifier()(**space)
+
+    return sklearn.model_selection.cross_val_score(
+        clf, iris_data.data, iris_data.target, n_jobs=-1, cv=3).mean()
+```
+
+```{python}
+iris_initial_data = sklearn.datasets.load_iris()
+list_algorithms = [RandomForest(), SVC()]
+
+study = optuna.create_study(direction='maximize')
+study.optimize(
+    lambda trial: objective(trial=trial, iris_data = iris_initial_data, list_algorithms=list_algorithms), 
+    n_trials=100 
+    )
+
+trial = study.best_trial
+```
+
+```{python}
+print('Accuracy: {}'.format(trial.value))
+print("Best hyperparameters: {}".format(trial.params))
+```
+
+The visualization options are quite amazing
+```{python}
+optuna.visualization.plot_optimization_history(study)
+```
+
+
+```{python}
+optuna.visualization.plot_slice(study)
+```
+
+```{python}
+optuna.visualization.plot_param_importances(study)
+```
+
+```{python}
+optuna.visualization.plot_parallel_coordinate(study)
+```
+
+```{python}
+optuna.visualization.plot_contour(study)
+```
+
+```{python}
+optuna.visualization.plot_contour(study, params=['n_estimators', 'max_depth'])
+```
+
+
+```{python}
+optuna.visualization.plot_timeline(study)
+```
+
+Besides, it is possibe to save and load optimization runs from a database, which make it really interesting for checking what happened during an optimization.

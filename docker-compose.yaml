@@ -1,0 +1,32 @@
+version: '3.7'
+services:
+  delta-lake:
+    image: delta-lake-image:latest
+    ports:
+      - "4040:4040"
+    environment:
+      - DELTA_HOME=/opt/delta-lake
+    volumes:
+      - ./delta-data:/opt/delta-lake/data
+    networks:
+      - delta-lake-network
+
+  apache-spark:
+    image: apache-spark-image:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - SPARK_MASTER=local
+      - DELTA_HOME=http://delta-lake:4040
+    depends_on:
+      - delta-lake
+    networks:
+      - delta-lake-network
+
+networks:
+  delta-lake-network:
+    driver: bridge
+  
+
+
+
